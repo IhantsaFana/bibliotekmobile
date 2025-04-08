@@ -17,6 +17,28 @@ from .LinkedList import Node,LinkedList
 def handler404(request, exception):
     redirect('home')
     
+
+import requests
+
+def get_book_info_from_google(isbn):
+    url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}"
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        data = response.json()
+        if 'items' in data:
+            book_info = data['items'][0]['volumeInfo']
+            return {
+                'title': book_info.get('title', ''),
+                'author': book_info.get('authors', []),
+                'publisher': book_info.get('publisher', ''),
+                'publishedDate': book_info.get('publishedDate', ''),
+                'description': book_info.get('description', ''),
+                'cover_image': book_info.get('imageLinks', {}).get('thumbnail', ''),
+            }
+    return None
+
+
 # API view for listing API endpoints
 class APIEndpoints(APIView):
     def get(self, request):
@@ -108,11 +130,21 @@ class Register(APIView):
 # API view for listing Books 
 class BookList(APIView):
     permission_classes = [IsAuthenticated]
+
     def get(self, request):
         books = Book.objects.all()
         serializer = BookSerializer(books, many=True)
         
+        # Ajouter les infos supplémentaires du livre à partir de l'API Google Books
+        for book in books:
+            book_info = get_book_info_from_google(book.isbn)
+            if book_info:
+                # Mettez à jour le livre ou faites en sorte d'envoyer les données récupérées avec le serializer
+                book_info['isbn'] = book.isbn  # Assurez-vous d'inclure l'ISBN pour chaque livre
+                print(book_info)
+        
         return Response(serializer.data, status=status.HTTP_200_OK)
+
     
 # API view for searching books
 class SearchBook(APIView):
@@ -120,58 +152,23 @@ class SearchBook(APIView):
 
     def get(self, request):
         query = request.GET.get('query', '').strip()
-        print(query)    
-        if(query == "author" or query == "title" or query == "isbn"):
-            # sort = request.GET.get('sort', 'title')  # Default sort by title
+        
+        if query:
+            # Si la recherche est par ISBN
+            if len(query) == 13:  # ISBN standard de 13 caractères
+                book_info = get_book_info_from_google(query)
+                if book_info:
+                    return Response(book_info, status=status.HTTP_200_OK)
+                else:
+                    return Response({'message': 'Book not found'}, status=status.HTTP_404_NOT_FOUND)
             
-            # Split the query by spaces
-            # keywords = query.split()
-            
-            # Start with all books
-            books = list(Book.objects.all())
-            # # Filter the books based on the query keywords
-            # for keyword in keywords:
-            #     books = books.filter(
-            #         Q(title__icontains=keyword) |
-            #         Q(author__icontains=keyword) |
-            #         Q(publication_date__icontains=keyword)
-            #         # Add more fields as needed for your search
-            #     )
-
-            # Sort the results based on the specified sorting term using custom sorting algorithm
-            if query == 'title':
-                books = self.sort_by_title(books)
-                print(books)
-            elif query == 'author':
-                print("geba")
-                books = self.sort_by_author(books)
-                print("weta")
-                print("After sorted -> books", books)
-            elif query == 'isbn':
-                books = self.sort_by_isbn(books)
-                print(books)
-            # Serialize the book data
+            # Recherche classique par titre, auteur, etc.
+            books = Book.objects.filter(
+                Q(author__icontains=query) |
+                Q(title__icontains=query) |
+                Q(isbn=query)
+            )
             serializer = BookSerializer(books, many=True)
-
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        else:    
-            query = request.GET.get('query', '').strip()
-
-            # Start with all books
-            books = Book.objects.all()
-            
-            # Filter the books based on the query parameter
-            if query:
-                books = books.filter( 
-                    Q(author__icontains=query) |
-                    Q(title__icontains=query) |
-                    Q(isbn=query)
-                )
-
-            # Serialize the book's data
-            serializer = BookSerializer(books, many=True)
-
-            # Return the serialized data in the response
             return Response(serializer.data, status=status.HTTP_200_OK)
     
     def sort_by_title(self, books):
@@ -283,3 +280,24 @@ class BorrowBookView(APIView):
         except Book.DoesNotExist:
             return Response({'message': 'Book not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+class AddBookByISBN(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        isbn = request.data.get('isbn')
+        
+        # Vérifiez si le livre existe déjà
+        book = Book.objects.filter(isbn=isbn).first()
+        if not book:
+            # Récupérer les informations via l'API Google Books
+            book_info = get_book_info_from_google(isbn)
+            if book_info:
+                # Créer un livre avec l'ISBN seulement
+                book = Book.objects.create(isbn=isbn)
+                # Vous pouvez ajouter les informations supplémentaires ici si nécessaire
+                # Par exemple, vous pouvez stocker ou simplement renvoyer les infos de Google Books
+                return Response(book_info, status=status.HTTP_201_CREATED)
+            else:
+                return Response({'message': 'Book not found in Google Books API'}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            return Response({'message': 'Book already exists'}, status=status.HTTP_400_BAD_REQUEST)

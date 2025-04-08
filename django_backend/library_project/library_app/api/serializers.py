@@ -9,9 +9,14 @@ class UserSerializer(serializers.ModelSerializer):
         
 
 class BookSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(source='book_info.title')
+    author = serializers.ListField(source='book_info.author')
+    cover_image = serializers.URLField(source='book_info.cover_image')
+    
     class Meta:
         model = Book
-        fields = '__all__'
+        fields = ['isbn', 'title', 'author', 'cover_image']
+
 
 class BorrowedBookSerializer(serializers.ModelSerializer):
     book = serializers.SerializerMethodField()

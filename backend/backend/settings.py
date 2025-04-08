@@ -67,6 +67,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8000",
     "http://localhost:8081",
     "exp://192.168.x.x:19000",
+    "http://127.0.0.1:33533/h7tFl0q0MAg=/",
+    "http://127.0.0.1:9100?uri=http://127.0.0.1:33533/h7tFl0q0MAg=/",
 ]
 
 AUTH_USER_MODEL = 'auths.User'
